@@ -784,7 +784,6 @@ Player::Player(WorldSession* session) : Unit(true)
     m_MirrorTimerFlagsLast = UNDERWATER_NONE;
     m_isInWater = false;
     m_drunkTimer = 0;
-    m_restTime = 0;
     m_deathTimer = 0;
     m_deathExpireTime = 0;
 
@@ -814,13 +813,15 @@ Player::Player(WorldSession* session) : Unit(true)
     m_lastpetnumber = 0;
 
     ////////////////////Rest System/////////////////////
-    time_inn_enter = 0;
-    inn_pos_mapid = 0;
-    inn_pos_x = 0;
-    inn_pos_y = 0;
-    inn_pos_z = 0;
-    m_rest_bonus = 0;
-    rest_type = REST_TYPE_NO;
+    m_InnEnteredPosition = Position(0, 0, 0, 0);
+    m_InnEnteredMap = 0;
+    m_InnEnteredArea = 0;
+    m_InnEnteredTime = 0;
+    m_InnTriggerId = 0;
+
+    m_resting_bonus = 0;
+    m_resting_FlagMask = RESTING_FLAG_NONE;
+    m_resting_Time = 0;
     ////////////////////Rest System/////////////////////
 
     m_mailsLoaded = false;
@@ -1780,15 +1781,19 @@ void Player::Update(uint32 p_time)
 
     if (HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING))
     {
-        if (roll_chance_i(3) && GetTimeInnEnter() > 0)      // freeze update
+        if (roll_chance_i(3) && m_resting_Time > 0)      // freeze update
         {
-            time_t time_inn = time(NULL) - GetTimeInnEnter();
-            if (time_inn >= 10)                             // freeze update
+            time_t currTime = time(nullptr);
+            time_t timeDiff = currTime - m_resting_Time;
+            if (timeDiff >= 10)                             // freeze update
             {
+                m_resting_Time = currTime;
                 float bubble = 0.125f*sWorld->getRate(RATE_REST_INGAME);
+                float extraPerSec = ((float)GetUInt32Value(PLAYER_NEXT_LEVEL_XP) / 72000.0f) * bubble;
+
                 // speed collect rest bonus (section/in hour)
-                SetRestBonus(GetRestBonus() + time_inn*((float)GetUInt32Value(PLAYER_NEXT_LEVEL_XP) / 72000)*bubble);
-                UpdateInnerTime(time(NULL));
+                float currRestBonus = GetRestBonus();
+                SetRestBonus(currRestBonus + timeDiff * extraPerSec);
             }
         }
     }
@@ -1805,6 +1810,14 @@ void Player::Update(uint32 p_time)
     {
         if (p_time >= m_zoneUpdateTimer)
         {
+            // On zone update tick check if we are still in an inn if we are supposed to be in one
+            if (HasRestingFlag(RESTING_FLAG_IN_TAVERN))
+            {
+                AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(GetInnTriggerId());
+                if (!IsInAreaTriggerRadius(atEntry))
+                    RemoveRestingFlag(RESTING_FLAG_IN_TAVERN);
+            }
+
             uint32 newzone, newarea;
             GetZoneAndAreaId(newzone, newarea);
 
@@ -1984,15 +1997,6 @@ void Player::SetDeathState(DeathState s)
     if (IsAlive() && !cur)
         //clear aura case after resurrection by another way (spells will be applied before next death)
         SetUInt32Value(PLAYER_SELF_RES_SPELL, 0);
-}
-
-void Player::InnEnter(time_t time, uint32 mapid, float x, float y, float z)
-{
-    inn_pos_mapid = mapid;
-    inn_pos_x = x;
-    inn_pos_y = y;
-    inn_pos_z = z;
-    time_inn_enter = time;
 }
 
 bool Player::BuildEnumData(PreparedQueryResult result, ByteBuffer* dataBuffer, ByteBuffer* bitBuffer)
@@ -3982,6 +3986,31 @@ void Player::SetInWater(bool apply)
     RemoveAurasWithInterruptFlags(apply ? AURA_INTERRUPT_FLAG_NOT_ABOVEWATER : AURA_INTERRUPT_FLAG_NOT_UNDERWATER);
 
     getHostileRefManager().updateThreatTables();
+}
+
+bool Player::IsInAreaTriggerRadius(const AreaTriggerEntry* trigger) const
+{
+    if (!trigger || GetMapId() != trigger->mapid)
+        return false;
+
+    if (trigger->radius > 0.f)
+    {
+        if (trigger->z < 0.f)
+            TC_LOG_DEBUG("misc", "Player::IsInAreaTriggerRadius: AreaTrigger.DBC->Position_Z (value: %f) are below 0. Changed to: %f.", trigger->z, abs(trigger->z));
+
+        // if we have radius check it
+        float dist = GetDistance(trigger->x, trigger->y, abs(trigger->z));
+        if (dist > trigger->radius)
+            return false;
+    }
+    else
+    {
+        Position center(trigger->x, trigger->y, trigger->z, trigger->box_orientation);
+        if (!IsWithinBox(center, trigger->box_x / 2.f, trigger->box_y / 2.f, trigger->box_z / 2.f))
+            return false;
+    }
+
+    return true;
 }
 
 void Player::SetGameMaster(bool on)
@@ -9111,15 +9140,58 @@ void Player::UpdateArea(uint32 newArea)
 
     // previously this was in UpdateZone (but after UpdateArea) so nothing will break
     pvpInfo.IsInNoPvPArea = false;
-    if (area && area->IsSanctuary())    // in sanctuary
+    if (area)
     {
-        SetByteFlag(UNIT_FIELD_BYTES_2, 1, UNIT_BYTE2_FLAG_SANCTUARY);
-        pvpInfo.IsInNoPvPArea = true;
-        if (!duel)
-            CombatStopWithPets();
+        if (area->IsSanctuary())    // in sanctuary
+        {
+            SetByteFlag(UNIT_FIELD_BYTES_2, 1, UNIT_BYTE2_FLAG_SANCTUARY);
+            pvpInfo.IsInNoPvPArea = true;
+            if (!duel)
+                CombatStopWithPets();
+        }
+        else
+            RemoveByteFlag(UNIT_FIELD_BYTES_2, 1, UNIT_BYTE2_FLAG_SANCTUARY);
+
+        /* on enter tavern, our core are waiting for client sending a CMSG_AREA_CHANGE Opcode. but he dosn't in goldshire. why??
+        sniffing show, that if player comes from a zone and enter the tavern, the client send CMSG_AREA_CHANGE... fine... But:
+        when player comes from an area, as in goldshire, the client send a CMSG_ZONE_CHANGE. (and our core set none RESTING_FLAGS)
+        On this place we need the triggerId. Know someone how to switch between triggerId <> areaId by DBC files?*/
+
+        uint32 triggerId = 0;
+        switch (newArea)
+        {
+        case 2101:
+            triggerId = 712;
+            break;
+        case 2102:
+            triggerId = 710;
+            break;
+        case 5637:
+            triggerId = 562;
+            break;
+        }
+
+        if (triggerId)
+        {
+            if (sObjectMgr->IsTavernAreaTrigger(triggerId))
+            {
+                AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(triggerId);
+                if (IsInAreaTriggerRadius(atEntry))
+                {
+                    SetRestingFlag(RESTING_FLAG_IN_TAVERN, triggerId);
+                    if (sWorld->IsFFAPvPRealm())
+                        RemoveByteFlag(UNIT_FIELD_BYTES_2, 1, UNIT_BYTE2_FLAG_FFA_PVP);
+                    return;
+                }
+            }
+        }
+        else if (HasRestingFlag(RESTING_FLAG_IN_TAVERN)) // Remove rest state if we have recently left a tavern.
+        {
+            AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(GetInnTriggerId());
+            if (GetMapId() != m_InnEnteredMap || GetDistance2d(atEntry->x, atEntry->y) > 10.0f)
+                RemoveRestingFlag(RESTING_FLAG_IN_TAVERN);
+        }
     }
-    else
-        RemoveByteFlag(UNIT_FIELD_BYTES_2, 1, UNIT_BYTE2_FLAG_SANCTUARY);
 }
 
 void Player::UpdateZone(uint32 newZone, uint32 newArea)
@@ -9185,33 +9257,11 @@ void Player::UpdateZone(uint32 newZone, uint32 newArea)
     if (zone->flags & AREA_FLAG_CAPITAL)                     // Is in a capital city
     {
         if (!pvpInfo.IsHostile || zone->IsSanctuary())
-        {
-            SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING);
-            SetRestType(REST_TYPE_IN_CITY);
-            InnEnter(time(0), GetMapId(), 0, 0, 0);
-        }
+            SetRestingFlag(RESTING_FLAG_IN_CITY);
         pvpInfo.IsInNoPvPArea = true;
     }
     else
-    {
-        if (HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING))
-        {
-            if (GetRestType() == REST_TYPE_IN_TAVERN)        // Still inside a tavern or has recently left
-            {
-                // Remove rest state if we have recently left a tavern.
-                if (GetMapId() != GetInnPosMapId() || GetExactDist(GetInnPosX(), GetInnPosY(), GetInnPosZ()) > 1.0f)
-                {
-                    RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING);
-                    SetRestType(REST_TYPE_NO);
-                }
-            }
-            else                                             // Recently left a capital city
-            {
-                RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING);
-                SetRestType(REST_TYPE_NO);
-            }
-        }
-    }
+        RemoveRestingFlag(RESTING_FLAG_IN_CITY);
 
     UpdatePvPState();
 
@@ -16689,8 +16739,8 @@ void Player::CompleteQuest(uint32 quest_id)
                 SetQuestSlotState(log_slot, QUEST_STATE_COMPLETE);
 
             uint64 guid = GetQuestGiverGUID(quest_id);
-            if (guid && guid != GetGUID())
-                printf("test: stored questGiverGuid != playerGuid\n");
+            if (guid && guid == GetGUID())
+                printf("test: stored questGiverGuid(%llu) != GetGuid(%llu) \n", guid, GetGUID());
 
             Object* questGiver = ObjectAccessor::GetObjectByTypeMask(*this, guid, TYPEMASK_UNIT | TYPEMASK_GAMEOBJECT | TYPEMASK_ITEM);
             InformQuestGiverObjectiveComplete(qInfo, questGiver);
@@ -19292,7 +19342,7 @@ bool Player::LoadFromDB(uint32 guid, SQLQueryHolder *holder)
     InitRunes();
 
     // rest bonus can only be calculated after InitStatsForLevel()
-    m_rest_bonus = fields[21].GetFloat();
+    m_resting_bonus = fields[21].GetFloat();
 
     if (time_diff > 0)
     {
@@ -20992,7 +21042,7 @@ void Player::SaveToDB(bool create /*=false*/)
         stmt->setUInt8(index++, m_cinematic);
         stmt->setUInt32(index++, m_Played_time[PLAYED_TIME_TOTAL]);
         stmt->setUInt32(index++, m_Played_time[PLAYED_TIME_LEVEL]);
-        stmt->setFloat(index++, finiteAlways(m_rest_bonus));
+        stmt->setFloat(index++, finiteAlways(m_resting_bonus));
         stmt->setUInt32(index++, uint32(time(NULL)));
         stmt->setUInt8(index++, (HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING) ? 1 : 0));
         //save, far from tavern/city
@@ -21125,7 +21175,7 @@ void Player::SaveToDB(bool create /*=false*/)
         stmt->setUInt8(index++, m_cinematic);
         stmt->setUInt32(index++, m_Played_time[PLAYED_TIME_TOTAL]);
         stmt->setUInt32(index++, m_Played_time[PLAYED_TIME_LEVEL]);
-        stmt->setFloat(index++, finiteAlways(m_rest_bonus));
+        stmt->setFloat(index++, finiteAlways(m_resting_bonus));
         stmt->setUInt32(index++, uint32(time(NULL)));
         stmt->setUInt8(index++, (HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING) ? 1 : 0));
         //save, far from tavern/city
@@ -23077,20 +23127,23 @@ void Player::SetRestBonus(float rest_bonus_new)
     float rest_bonus_max = (float)GetUInt32Value(PLAYER_NEXT_LEVEL_XP)*1.5f / 2;
 
     if (rest_bonus_new > rest_bonus_max)
-        m_rest_bonus = rest_bonus_max;
+        m_resting_bonus = rest_bonus_max;
     else
-        m_rest_bonus = rest_bonus_new;
+        m_resting_bonus = rest_bonus_new;
 
     // update data for client
     if (GetSession()->IsARecruiter() || (GetSession()->GetRecruiterId() != 0))
         SetByteValue(PLAYER_BYTES_2, 3, REST_STATE_RAF_LINKED);
-    else if (m_rest_bonus > 10)
-        SetByteValue(PLAYER_BYTES_2, 3, REST_STATE_RESTED);              // Set Reststate = Rested
-    else if (m_rest_bonus <= 1)
-        SetByteValue(PLAYER_BYTES_2, 3, REST_STATE_NOT_RAF_LINKED);              // Set Reststate = Normal
+    else
+    {
+        if (m_resting_bonus > 10)
+            SetByteValue(PLAYER_BYTES_2, 3, REST_STATE_RESTED);              // Set Reststate = Rested
+        else if (m_resting_bonus <= 1)
+            SetByteValue(PLAYER_BYTES_2, 3, REST_STATE_NOT_RAF_LINKED);              // Set Reststate = Normal
+    }
 
     //RestTickUpdate
-    SetUInt32Value(PLAYER_REST_STATE_EXPERIENCE, uint32(m_rest_bonus));
+    SetUInt32Value(PLAYER_REST_STATE_EXPERIENCE, uint32(m_resting_bonus));
 }
 
 bool Player::ActivateTaxiPathTo(std::vector<uint32> const& nodes, Creature* npc /*= NULL*/, uint32 spellid /*= 0*/)
@@ -29828,5 +29881,44 @@ void Player::SendUpdatePhasing()
         return;
     
     UpdatePhaseForQuestAreaOrZoneChange();
+}
+
+void Player::SetRestingFlag(RestingFlag restFlag, uint32 triggerId /*= 0*/)
+{
+    // set resting flag we are in the inn
+    uint32 oldRestMask = m_resting_FlagMask;
+    m_resting_FlagMask |= restFlag;
+
+    if (!oldRestMask && m_resting_FlagMask) // only set flag/time on the first rest state
+    {
+        SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING);
+        m_resting_Time = time(nullptr);
+    }
+
+    if (triggerId)
+    {
+        m_InnTriggerId = triggerId;
+        m_InnEnteredMap = GetMapId();
+        m_InnEnteredArea = GetAreaId();
+        m_InnEnteredPosition = GetPosition();
+        m_InnEnteredTime = time(NULL);
+    }
+}
+
+void Player::RemoveRestingFlag(RestingFlag restFlag)
+{
+    uint32 oldRestMask = m_resting_FlagMask;
+    m_resting_FlagMask &= ~restFlag;
+
+    if (oldRestMask && !m_resting_FlagMask) // only remove flag/time on the last rest state remove
+    {
+        RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING);
+        m_resting_Time = 0;
+        m_InnTriggerId = 0;
+        m_InnEnteredMap = 0;
+        m_InnEnteredArea = 0;
+        m_InnEnteredPosition = Position(0, 0, 0, 0);
+        m_InnEnteredTime = 0;
+    }
 }
 
