@@ -1,4 +1,3 @@
-
 REPLACE INTO gameobject_loot_template VALUES (202655, 63115, 0, 6.8, 0, 1, 1, 1, 1, "");
 
 REPLACE INTO gameobject_loot_template VALUES (202655, 63118, 0, 6.8, 0, 1, 1, 1, 1, "");
@@ -140,5 +139,3 @@ REPLACE INTO creature_loot_template VALUES (25866, 2698, 0, 0.0714, 0, 1, 0, 1, 
 REPLACE INTO creature_loot_template VALUES (25924, 2589, 0, 22.5296, 0, 1, 0, 1, 3, "");
 
 REPLACE INTO creature_loot_template VALUES (25924, 2592, 0, 20.9486, 0, 1, 0, 1, 2, "");
-
-

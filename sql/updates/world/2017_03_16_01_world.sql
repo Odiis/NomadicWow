@@ -1,4 +1,3 @@
-
 -- fix issue #239
 DELETE FROM gameobject_loot_template WHERE Entry=2843;
 INSERT INTO gameobject_loot_template VALUES 
@@ -51,5 +50,4 @@ INSERT INTO gameobject_loot_template VALUES
 (2843, 61959, 0, 20.8384, 1, 1, 0, 1, 1, ""), 
 (2843, 61960, 0, 20.8928, 1, 1, 0, 1, 1, ""), 
 (2843, 61961, 0, 20.8942, 1, 1, 0, 1, 1, ""), 
-(2843, 61962, 0, 20.9274, 1, 1, 0, 1, 1, ""); 
-
+(2843, 61962, 0, 20.9274, 1, 1, 0, 1, 1, "");

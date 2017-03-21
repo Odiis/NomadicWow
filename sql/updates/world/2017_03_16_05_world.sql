@@ -1,4 +1,3 @@
-
 -- fix issues #242
 DELETE FROM creature_text WHERE entry=41379;
 INSERT INTO creature_text VALUES 
@@ -8,5 +7,3 @@ INSERT INTO creature_text VALUES
 (41379, 3, 0, "My dearest sibling, do you hunger? THEN FEAST UPON OUR ENEMIES!", 14, 0, 0, 22, 0, 23371, "VO_BD_Nefarian_MaloriakDead01", 49417);
 
 UPDATE creature_template SET speed_walk=1.6, speed_run=.85714, unit_class=4, unit_flags=32768, VehicleId=846, mechanic_immune_mask=8388624 WHERE entry=41918;
-
-

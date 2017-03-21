@@ -1,4 +1,3 @@
-
 UPDATE creature_template SET ScriptName="npc_moonbrook_player_trigger_43515" WHERE entry=43515;
 
 DELETE FROM creature_text WHERE entry=43515 AND groupid=1 AND id=0;
@@ -96,8 +95,3 @@ INSERT INTO waypoint_data VALUES
 (4269802, 1, -72.25556, -821.2701, 40.48545, 0, 0, 1, 0, 100, 0),
 (4269802, 2, -70.25556, -821.5201, 40.73545, 0, 0, 1, 0, 100, 0),
 (4269802, 3, -66.70383, -821.943, 40.95212, 0, 0, 1, 0, 100, 0);
-
-
-
-
-

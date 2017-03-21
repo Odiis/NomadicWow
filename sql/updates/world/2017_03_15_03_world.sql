@@ -1,18 +1,10 @@
-
 UPDATE creature_addon SET path_id=341780 WHERE guid=34178;
-
 UPDATE creature SET MovementType=2 WHERE guid=34178;
-
 UPDATE creature_template_addon SET bytes2=1 WHERE entry=437;
-
 UPDATE creature_addon SET auras="" WHERE guid in (33834, 33873, 34039, 34110, 34194, 34197, 34253, 34392, 34426);
-
 update creature_loot_template set Reference=0, Chance=100, QuestRequired=1 where Entry=43350 and Item=58969;
-
 UPDATE creature_template SET dmg_multiplier=1, Health_mod=1, Mana_mod=1 WHERE entry=43350;
-
 UPDATE creature_template SET mindmg=23, maxdmg=31, attackpower=56, dmg_multiplier=1, minrangedmg=16, maxrangedmg=23, rangedattackpower=2, Health_mod=1, Mana_mod=1 WHERE entry=43363;
-
 UPDATE creature SET MovementType=2 WHERE guid=44144;
 
 DELETE FROM creature_addon WHERE guid=44144;
@@ -35,41 +27,27 @@ INSERT INTO waypoint_data VALUES
 (441440, 11, -8693.455, -2150.018, 158.4448, 2.658128, 0, 0, 0, 100, 0);
 
 UPDATE creature SET spawntimesecs=300 WHERE guid=9362;
-
 UPDATE creature SET spawntimesecs=300 WHERE guid=33965;
-
 UPDATE `creature_template` SET `ScriptName`="npc_wounded_infantry_42501" WHERE `entry`=42501;
-
 UPDATE `creature_template` SET `npcflag`=0 WHERE `entry` IN(46268,46363);
 
 DELETE FROM `creature_queststarter` WHERE id=46268 AND quest=27671;
 
 UPDATE `npc_trainer` SET reqlevel=6,reqskill=355 WHERE spell=689;
-
 UPDATE quest_template SET method=2, RequiredNpcOrGo1=42501 WHERE Id=26970;
-
 UPDATE `creature` SET `spawndist`=0,MovementType=0 WHERE guid=62611 AND `id`=42505;
-
 UPDATE `gameobject_template` SET `data0`=1691,`data8`=26222 WHERE entry IN(203443,203965,203966,203964,203968,203967);
-
 UPDATE quest_template SET PrevQuestId=26545 WHERE Id=26567;
-
 UPDATE quest_template SET Method=2, RequiredNpcOrGo1=27635, RequiredNpcOrGoCount1=1 WHERE Id=27635;
-
 UPDATE locales_quest SET OfferRewardText_loc3="So, jetzt könnt Ihr Euch an die Oberfläche begeben und ein neues Leben beginnen. Der Hochtüftler wird begeistert sein, wenn er von Eurer Ankunft erfährt." WHERE Id=27635;
-
 UPDATE locales_quest SET QuestGiverTextWindow_loc3="Ardo Schmutzpranke", QuestGiverTargetName_loc3="Ardo Schmutzpranke" WHERE Id=26519;
-
 UPDATE creature_template SET ScriptName="npc_magistrate_solomon_344" WHERE entry=344;
-
 update creature_template_outfits set shoulders=-53903 where entry=70901;
-
 UPDATE locales_quest SET ObjectiveText1_loc3="Geht zum Friedhof von Seenhain" WHERE Id=26512;
 
 delete from gameobject where id=2055 and guid=19017;
 
 UPDATE creature SET spawndist=0, MovementType=2 WHERE guid=34539;
-
 UPDATE creature SET position_x=-9117.48, position_y=-2211.68, position_z=125.285 WHERE guid=34244;
 
 DELETE FROM waypoint_data WHERE id=34244;
@@ -102,16 +80,3 @@ INSERT INTO waypoint_data VALUES
 (34244, 25, -9153.777, -2263.482, 114.8529, 1.298332, 0, 0, 0, 100, 0),
 (34244, 26, -9147.447, -2243.429, 119.2878, 1.262989, 0, 0, 0, 100, 0),
 (34244, 27, -9140.319, -2225.623, 120.2103, 1.188376, 0, 0, 0, 100, 0);
-
-
-
-
-
-
-
-
-
-
-
-
-
